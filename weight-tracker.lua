@@ -159,9 +159,10 @@ function show_history()
         --for datetime, weight in spairs(DATA, function(t,a,b) return t[b] < t[a] end) do    
         local newestDataFirst = reverseTable(DATA)
         for i,v in ipairs(newestDataFirst) do
-            formatted_date = os.date("%x", v.datetime)
-            formatted_time = os.date("%I:%M%p", v.datetime)
-            printf(v.weight, formatted_date, formatted_time)
+            local formatted_date = os.date("%x", v.datetime)
+            local formatted_time = os.date("%I:%M%p", v.datetime)
+            local text = v.weight .. ' - ' .. formatted_date .. ' - ' .. formatted_time
+            printf(text)
         end
     end
 
@@ -185,13 +186,14 @@ end
 
 --Draws the application menu and handles its logic
 function showMainMenu() 
-    mainmenu = {"Add Entry", "View Chart", "Show History", "Exit"} 
+    rb.lcd_clear_display()
+    mainmenu = {"View Chart", "Show History", "Add Entry", "Exit"} 
 
     while true do -- don't exit of program until user selects Exit
         s = rb.do_menu("Weight Tracker", mainmenu, nil, false) 
-        if     s == 0 then add_entry()
-        elseif s == 1 then draw_chart() 
-        elseif s == 2 then show_history()
+        if     s == 0 then draw_chart()
+        elseif s == 1 then show_history()
+        elseif s == 2 then add_entry()
         elseif s == 3 then os.exit() 
         elseif s == -2 then os.exit()
         else rb.splash(2 * rb.HZ, "Error! Selected index: " .. s)
