@@ -257,11 +257,13 @@ end
 function draw_chart()
     load_file(SAVE_FILE)
     local scale = 200
+    local bar_width = 3
 
     rb.lcd_clear_display()
     function draw_entries()
         local xpos = 0
-        local bar_width = 3
+        --local bar_width = 3
+        
         for i,v in ipairs(DATA) do
         --for datetime, weight in spairs(DATA, function(t,a,b) return t[b] < t[a] end) do 
             local percentage = (v.weight * 100) / scale
@@ -273,12 +275,22 @@ function draw_chart()
         rb.lcd_update()
     end
 
+    function increment_bar_width_up()
+        bar_width = bar_width + 1
+    end
+
+    function increment_bar_width_down()
+        bar_width = bar_width - 1 
+    end
+
     draw_entries()
     local exit = false
     repeat
         local action = rb.get_action(rb.contexts.CONTEXT_KEYBOARD, -1)
         if action == rb.actions.ACTION_KBD_DOWN then
+            increment_bar_width_down()
         elseif action == rb.actions.ACTION_KBD_UP then
+            increment_bar_width_up()
         elseif action == rb.actions.ACTION_KBD_LEFT or 
             action == rb.actions.ACTION_KBD_RIGHT or 
             action == rb.actions.ACTION_KBD_SELECT or
