@@ -1,0 +1,144 @@
+Lua interpreter plugin
+
+There are a few exceptions/additions to the Lua support in Rockbox:
+* No floating point support. The number type in Lua is usually float, however in the Rockbox implementation it is integer.
+* Non-supported libraries. The coroutine and debug libraries are not supported.
+* Partially-supported libraries. The math, os and package libraries are only partially supported.
+* Additional libraries. The bitlib library is integrated to support bitwise operators.
+Documentation of the API is still a work in progress, and the API itself is not finalised.
+Note: Please note that if a script does not provide a way to exit, then the only way to exit will be to reset the player.
+
+API list
+
+As of Rockbox 3.9, the following are available:
+* coroutine io os package string table : as documented in the Lua reference manual
+* math : functions abs ceil deg floor fmod max min rad random randomseed
+* bit : (bitlib) functions arshift band bnot bor bxor lshift rshift
+* luadir: functions dir mkdir rmdir, see http://www.rockbox.org/tracker/11347
+* MP3 control using such functions as playlist_create. (See plugins.h for all the available media functions and below for an example)
+* rb, described in display functions lcd_* and others, see GraphicsAPI
+
+
+======
+
+Rockbox graphics API documentation - new, unified API
+
+Overview
+Concepts
+Default values
+Functions
+Viewports
+NOTES
+Further ideas/suggestions
+Overview
+
+Existing implementations:
+
+Black & white core (Targets with monochrome displays)
+4-level greyscale core (Targets with grayscale displays)
+16-bit colour core (Colour targets)
+Greyscale library (Archos recorders, Ondios, Iriver H1x0, iAudio M5, greyscale iPods; 129 shades)
+Archos player graphics library (black & white)
+Key features:
+
+Uses a draw mode concept.
+Full clipping support
+Core implementations are extendable by plugin library code
+Concepts
+
+The main idea is that instead of having multiple functions for the same primitive, there is a draw mode. The draw modes act as follows:
+Mode	Effect for elements with foreground only (pixels, lines, filled primitives)	Effect for elements with foreground and background (monochrome bitmaps, text)
+COMPLEMENT	invert (xor) all pixels belonging to the primitive	invert (xor) all foreground pixels, leave background pixels as-is
+BG	do nothing	leave foreground pixels as-is, draw background pixels with current background colour (b&w: white)
+FG	draw all pixels with current foreground colour	draw foreground pixels with current foreground colour (b&w: black), leave background pixels as-is
+SOLID	draw all pixels with current foreground colour	draw foreground pixels with current foreground colour (b&w: black), draw background pixels with current background colour (b&w: white)
+COMPLEMENT+INVERSEVID	do nothing	leave foreground pixels as-is, invert (xor) all background pixels
+BG+INVERSEVID	draw all pixels with current background colour	draw foreground pixels with current background colour (b&w: white), leave background pixels as-is
+FG+INVERSEVID	do nothing	leave foreground pixels as-is, draw background pixels with current foreground colour (b&w: black)
+SOLID+INVERSEVID	draw all pixels with current background colour	draw foreground pixels with current background colour (b&w: white), draw background pixels with current foreground colour (b&w: black)
+Default values
+
+drawmode	DRMODE_SOLID
+foreground	LCD_DEFAULT_FG (b&w: black, fixed *)
+background	LCD_DEFAULT_BG (b&w: white, fixed *)
+*) The m:robe 100 uses inverted display by default, so foreground is red, background is black. This does not apply to the greylib on m:robe 100.
+Functions called in the UI thread context should be safe to assume that these defaults are set. If a function needs to change a value, it should restore the default before returning or calling other functions which depend on the correct values. Functions called from other threads can't assume anything about the drawmode or the foreground and background, and have to reset them to whatever they were set before prior to returning or yielding. Avoid changing these values in interrupt context unless you're absolutely sure what you are doing.
+Functions
+
+The function prefix is replaced by a generic xxx_ in the following table.
+function	b&w	grey	colour	description
+special functions
+void xxx_blit(fb_data *data, int x, int block_y, int width, int block_height, int stride)	DONE1)	DONE1)	 	Special high-performance function to move external bitmap data (native lcd bitmap format) directly into the lcd.
+void xxx_update()	DONE	DONE	DONE	Update lcd contents with contents of the whole framebuffer.
+void xxx_update_rect(int x, int y, int width, int height)	DONE	DONE	DONE	Update a rectangular area of the lcd contents with the corresponding area of the framebuffer. The boundaries (horizontal or vertical depending on the hardware) of the update area are adjusted to block boundaries, i.e. the function always updates whole blocks.
+void xxx_clear_display()	DONE	DONE2)	DONE	Clear the whole framebuffer, i.e. set all pixels to the current background colour (white for b&w) or to the current foreground colour (black for b&w) if inversevid is on.
+parameter handling
+void xxx_set_drawmode(int mode)	DONE	DONE	DONE	Set draw mode for subsequent drawing operations (inverse / foreground / background / solid + inversevid flag). Foreground and background are fixed to black & white for b&w graphics.
+int xxx_get_drawmode()	DONE	DONE	DONE	Return current draw mode.
+void xxx_set_foreground(unsigned foreground)	 	DONE	DONE	Set the foreground brightness (0..MAX_LEVEL) / colour (packed RGB value) for subsequent drawing operations.
+unsigned xxx_get_foreground()	 	DONE	DONE	Return current foreground brightness (0..MAX_LEVEL) / colour (packed RGB value).
+void xxx_set_background(unsigned background)	 	DONE	DONE	Set the background brightness (0..MAX_LEVEL) / colour (packed RGB value) for subsequent drawing operations.
+unsigned xxx_get_background()	 	DONE	DONE	Return current background brightness (0..MAX_LEVEL) / colour (packed RGB value).
+void xxx_set_drawinfo(int mode, unsigned foreground, unsigned background)	 	DONE	DONE	Set draw mode, foreground and background brightness / colour at once.
+pixel functions
+void xxx_drawpixel(int x, int y)	DONE	DONE	DONE	Draw a pixel using current draw mode & foreground colour.
+lines and line-like primitives
+void xxx_drawline(int x1, int y1, int x2, int y2)	DONE	DONE	DONE	Draw a line using current draw mode & foreground colour, using the bresenham algorithm.
+void xxx_hline(int x1, int x2, int y)	DONE	DONE	DONE	Draw a horizontal line using current draw mode & foreground colour. At least a bit faster than using bresenham, possibly using further optimisation.
+void xxx_vline(int x, int y1, int y2)	DONE	DONE	DONE	Draw a vertical line using current draw mode & foreground colour. At least a bit faster than using bresenham, possibly using further optimisation.
+void xxx_drawrect(int x, int y, int width, int height)	DONE	DONE	DONE	Draw a rectangle (frame) using current draw mode & foreground colour.
+filled primitives
+void xxx_fillrect(int x, int y, int width, int height)	DONE	DONE	DONE	Fill a rectangular area with foreground pixels.
+void xxx_filltriangle(int x1, int y1, int x2, int y2, int x3, int y3)	DONE3)	DONE3)	DONE3)	Fill a triangular area with foreground pixels. Useful for 3-d rendering.
+bitmaps and text
+void xxx_bitmap_part(fb_data *data, int src_x, int src_y, int stride, int x, int y, int width, int height)	DONE	DONE4)	DONE	Draw a partial native bitmap. For b&w, this uses the current draw mode. The stride parameter is the width of the source bitmap in pixels.
+void xxx_bitmap(fb_data *data, int x, int y, int width, int height)	DONE	DONE4)	DONE	Draw a native bitmap. For b&w, this uses the current draw mode.
+void xxx_mono_bitmap_part(unsigned char *data, int src_x, int src_y, int stride, int x, int y, int width, int height)	DONE	DONE	DONE	Draw a partial monochrome (1-bit) bitmap. This uses the current draw mode, foreground and background colour. For monochrome displays this function is simply an alias to xxx_bitmap_part() and hence uses the same bitmap format. For greyscale and colour displays the format should be similar to the respective native format, i.e. for iriver H1xx, where the native format consists of vertical 4-pixel blocks (2bpp), the monochrome format consists of vertical 8-pixel blocks (same as the native archos recorder/ Ondio and native iriver H1X0? remote format).
+void xxx_mono_bitmap(unsigned char *data, int x, int y, int width, int height)	DONE	DONE	DONE	Draw a monochrome (1-bit) bitmap. This uses the current draw mode, foreground and background colour.
+void xxx_gray_bitmap_part(unsigned char *data, int src_x, int src_y, int stride, int x, int y, int width, int height)	 	DONE2)3)	DONE3)	Draw a partial greyscale bitmap. This uses the canonical greyscale format, 1 byte/pixel.
+void xxx_gray_bitmap(unsigned char *data, int x, int y, int width, int height)	 	DONE2)3)	DONE3)	Draw a greyscale bitmap. This uses the canonical greyscale format, 1 byte/pixel.
+void xxx_color_bitmap_part(unsigned char *data, int src_x, int src_y, int stride, int x, int y, int width, int height)	 	 	DONE3)	Draw a partial true colour bitmap. This uses the canonical true colour format, 3 byte/pixel RGB.
+void xxx_color_bitmap(unsigned char *data, int x, int y, int width, int height)	 	 	DONE3)	Draw a true colour bitmap. This uses the canonical true colour format, 3 byte/pixel RGB.
+void xxx_putsxyofs(int x, int y, int offset, char *string)	DONE	DONE	DONE	Draw the string, but leave out the 'offset' left pixel columns, clipping the text. Uses the current draw mode, foreground and background colour.
+void xxx_putsxy(int x, int y, char *string)	DONE	DONE	DONE	Draw the string, using the current draw mode, foreground and background colour.
+scrolling
+void xxx_scroll_left(int count)	DONE3)	DONE2)3)	DONE3)	Scroll display contents left by 'count' pixels. Scrolled in pixels at the right are always white.
+void xxx_scroll_right(int count)	DONE3)	DONE2)3)	DONE3)	Scroll display contents right by 'count' pixels. Scrolled in pixels at the left are always white.
+void xxx_scroll_up(int count)	DONE3)	DONE2)3)	DONE3)	Scroll display contents up by 'count' pixels. Scrolled in pixels at the bottom are always white.
+void xxx_scroll_down(int count)	DONE3)	DONE2)3)	DONE3)	Scroll display contents down by 'count' pixels. Scrolled in pixels at the top are always white
+1) Only within the core, and only for displays with relatively few native grey levels, to make external pixel flipping possible (video, test_scanrate)
+2) The greyscale library additionally provides unbuffered versions of these, saving RAM if only those basic functions are needed. Unbuffered mode doesn't use xxx_update[_rect](), changes are shown immediately.
+3) For core implementations, these functions should be part of the plugin library.
+4) As the greyscale library has a variable internal format, these functions are not provided as they don't make sense. Use grey[_ub]_gray_bitmap[_part]() instead, which take canonical greyscale bitmaps.
+Viewports
+
+A Viewport is simply a C struct containing an LCD state. It is defined as follows (in lcd.h):
+struct viewport {
+    int x;
+    int y;
+    int width;
+    int height;
+#ifdef HAVE_LCD_BITMAP
+    int font;
+    int drawmode;
+#endif
+#if LCD_DEPTH > 1
+    unsigned fg_pattern;
+    unsigned bg_pattern;
+#ifdef HAVE_LCD_COLOR
+    unsigned lss_pattern;
+    unsigned lse_pattern;
+    unsigned lst_pattern;
+#endif
+#endif
+};
+Each LCD driver has an internal full-screen viewport structure declared, and this is the default when the LCD driver is first initialised.
+All the LCD functions described on this page only draw within the boundary of the viewport, and will use the current font, drawmode and colours defined in that viewport. (x,y) co-ordinates passed to the LCD functions will always be relative to the current viewport.
+The current viewport is set with the following function:
+void lcd_set_viewport(struct viewport* vp);
+Passing NULL to this function will select the LCD driver's internal default viewport.
+The exceptions to the "operate only within this viewport" rule are lcd_clear_display() and lcd_update(_rect). These act on the whole LCD. There are viewport-aware equivalents of these functions - lcd_clear_viewport() and lcd_update_viewport_(rect).
+NOTES
+
+The scrolling code stores a pointer to the viewport struct in use at the time the scrolling line was drawn on the screen. This means that you can't draw scrolling lines using temporary (i.e. on the stack) viewports - they must exist throughout the lifetime of the scrolling line;
+The intention is for different viewports to not overlap each other on the screen - i.e. there is no concept of Z-ordering, the LCD driver only ever knows about 1 viewport at a time.
